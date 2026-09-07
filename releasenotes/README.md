@@ -29,5 +29,18 @@ Each release follows this structure:
 2. The version list is ordered newest first.
 3. User-visible changes are grouped under `Added`, `Changed`, `Fixed`, and
    `Removed`, with empty sections omitted.
-4. The package version, `cqlib_pulse.__version__`, and release-note filename
-   match.
+4. Update the version only in `pyproject.toml`. `cqlib_pulse.__version__`
+   reads the installed package metadata automatically. Reinstall the package
+   after changing the version, including for editable installations
+   (`python -m pip install -e .`), and keep the release-note filename in sync.
+
+To check the installed version:
+
+```python
+import cqlib_pulse
+
+print(cqlib_pulse.__version__)
+```
+
+Install the package before importing it; loading an uninstalled source checkout
+through `PYTHONPATH` alone does not provide the required package metadata.

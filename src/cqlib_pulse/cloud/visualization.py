@@ -16,8 +16,9 @@ from __future__ import annotations
 
 import json
 import time
+from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Any, Callable, Protocol, runtime_checkable
+from typing import Protocol, cast, runtime_checkable
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlencode
 from urllib.request import Request, urlopen
@@ -93,7 +94,7 @@ class TianyanWaveformClient:
         *,
         base_url: str = DEFAULT_TIANYAN_URL,
         request_timeout_secs: float = 30,
-    ) -> "TianyanWaveformClient":
+    ) -> TianyanWaveformClient:
         """Log in with an API Key and retain an in-memory refresh provider."""
 
         auth = TianyanAuthClient(
@@ -117,7 +118,7 @@ class TianyanWaveformClient:
     ) -> int | str:
         if not isinstance(circuit, str) or not circuit.strip():
             raise ValueError("circuit must contain non-empty QCIS")
-        payload = {
+        payload: dict[str, object] = {
             "circuit": circuit,
             "qcCode": self.qc_code,
             "circuitName": circuit_name,
@@ -125,13 +126,13 @@ class TianyanWaveformClient:
         }
         data = self._request_json("POST", CREATE_WAVEFORM_PATH, payload=payload)
         query_id = data.get("id")
-        if query_id is None or query_id == "":
-            raise WaveformAPIError("Waveform creation response is missing data.id")
+        if isinstance(query_id, bool) or not isinstance(query_id, (int, str)) or query_id == "":
+            raise WaveformAPIError("Waveform creation response data.id must be an int or string")
         return query_id
 
     def query_waveform_data(self, query_id: int | str) -> str | None:
-        if query_id is None or query_id == "":
-            raise ValueError("query_id must not be empty")
+        if isinstance(query_id, bool) or not isinstance(query_id, (int, str)) or query_id == "":
+            raise ValueError("query_id must be a non-empty integer or string")
         data = self._request_json(
             "GET",
             QUERY_WAVEFORM_PATH,
@@ -149,9 +150,9 @@ class TianyanWaveformClient:
         method: str,
         path: str,
         *,
-        payload: dict[str, Any] | None = None,
+        payload: dict[str, object] | None = None,
         params: dict[str, int | str] | None = None,
-    ) -> dict[str, Any]:
+    ) -> dict[str, object]:
         url = f"{self.base_url}{path}"
         if params:
             url = f"{url}?{urlencode(params)}"
@@ -193,7 +194,7 @@ class TianyanWaveformClient:
         if not isinstance(data, dict):
             message = result.get("message") or result.get("msg") or "missing data object"
             raise WaveformAPIError(f"Waveform API request failed: {message}")
-        return data
+        return cast(dict[str, object], data)
 
 
 class CloudPulseVisualizer:

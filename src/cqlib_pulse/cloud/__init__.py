@@ -10,10 +10,9 @@
 # copyright notice, and modified files need to carry a notice indicating
 # that they have been altered from the originals.
 
-"""Optional Tianyan execution and waveform visualization adapters."""
+"""Tianyan waveform visualization adapters."""
 
 from .auth import TianyanAuthClient
-from .executor import PulseExecution, TianyanExecutor
 from .visualization import (
     CloudPulseVisualizer,
     TianyanWaveformClient,
@@ -23,8 +22,6 @@ from .visualization import (
 
 __all__ = [
     "CloudPulseVisualizer",
-    "PulseExecution",
-    "TianyanExecutor",
     "TianyanAuthClient",
     "TianyanWaveformClient",
     "WaveformAPI",

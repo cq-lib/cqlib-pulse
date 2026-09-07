@@ -17,9 +17,23 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TypeAlias
 
-from cqlib import Qubit
-
 from ..errors import PulseValidationError
+
+__all__ = ["CouplerQubit", "PulseTarget", "Qubit", "parse_target"]
+
+
+@dataclass(frozen=True, slots=True, order=True)
+class Qubit:
+    """A data-qubit target, serialized as ``Q<index>`` in QCIS."""
+
+    index: int
+
+    def __post_init__(self) -> None:
+        if isinstance(self.index, bool) or not isinstance(self.index, int) or self.index < 0:
+            raise PulseValidationError("Qubit index must be a non-negative integer")
+
+    def __str__(self) -> str:
+        return f"Q{self.index}"
 
 
 @dataclass(frozen=True, slots=True, order=True)

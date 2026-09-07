@@ -19,8 +19,11 @@ from dataclasses import dataclass
 
 from ..errors import PulseValidationError
 from .instructions import PulseInstruction
-from .targets import CouplerQubit, PulseTarget
+from .targets import CouplerQubit, PulseTarget, Qubit
 from .waveforms import MAX_PULSE_LENGTH_NS, Number, validate_real
+
+_SINGLE_QUBIT_GATES = {"X2P", "X2M", "Y2P", "Y2M"}
+_PARAMETRIC_SINGLE_QUBIT_GATES = {"XY2P", "XY2M", "RZ"}
 
 
 @dataclass(frozen=True, slots=True)
@@ -54,20 +57,43 @@ class StandardOperation:
             raise PulseValidationError(f"Invalid QCIS opcode: {self.opcode!r}")
         if not self.targets:
             raise PulseValidationError("A standard operation requires at least one target")
+        if any(not isinstance(target, (Qubit, CouplerQubit)) for target in self.targets):
+            raise PulseValidationError("Operation targets must be Qubit or CouplerQubit instances")
         for value in self.parameters:
             validate_real("operation parameter", value)
+        if self.opcode in _SINGLE_QUBIT_GATES:
+            self._validate_arity(1, 0)
+            self._validate_data_qubits()
+        elif self.opcode in _PARAMETRIC_SINGLE_QUBIT_GATES:
+            self._validate_arity(1, 1)
+            self._validate_data_qubits()
+        elif self.opcode == "CX":
+            self._validate_arity(2, 0)
+            self._validate_data_qubits()
+            if self.targets[0] == self.targets[1]:
+                raise PulseValidationError("CX control and target must be different qubits")
         if self.opcode == "I":
-            if len(self.parameters) != 1 or not isinstance(self.parameters[0], int):
+            self._validate_arity(1, 1)
+            if not isinstance(self.parameters[0], int):
                 raise PulseValidationError("I requires one integer length parameter")
             if not 0 <= self.parameters[0] <= MAX_PULSE_LENGTH_NS:
                 raise PulseValidationError(f"I length must be in [0, {MAX_PULSE_LENGTH_NS}]")
-        elif self.opcode == "RZ" and len(self.parameters) != 1:
-            raise PulseValidationError("RZ requires one angle parameter")
-        elif self.opcode in {"X2P", "M", "B"} and self.parameters:
-            raise PulseValidationError(f"{self.opcode} does not accept parameters")
-        if self.opcode in {"RZ", "X2P", "M"} and any(
-            isinstance(target, CouplerQubit) for target in self.targets
-        ):
+        elif self.opcode == "B":
+            if self.parameters:
+                raise PulseValidationError("B does not accept parameters")
+        elif self.opcode == "M":
+            if self.parameters:
+                raise PulseValidationError("M does not accept parameters")
+            self._validate_data_qubits()
+
+    def _validate_arity(self, targets: int, parameters: int) -> None:
+        if len(self.targets) != targets or len(self.parameters) != parameters:
+            raise PulseValidationError(
+                f"{self.opcode} requires exactly {targets} target(s) and {parameters} parameter(s)"
+            )
+
+    def _validate_data_qubits(self) -> None:
+        if any(isinstance(target, CouplerQubit) for target in self.targets):
             raise PulseValidationError(f"{self.opcode} requires data-qubit targets")
 
 

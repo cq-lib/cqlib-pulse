@@ -73,8 +73,11 @@ def _parse_pulse(opcode: str, values: list[Number]) -> PulseInstruction:
         waveform = waveform_from_parameters([*values[:3], *values[6:]])
         return PXY(waveform, values[3], values[4], values[5])
     waveform = waveform_from_parameters([*values[:3], *values[4:]])
+    call_mapper = values[3]
+    if not isinstance(call_mapper, int):
+        raise QCISParseError(f"{opcode} call_mapper must be 0 or 1")
     cls: type[PZ] = PZ if opcode == "PZ" else PZ0
-    return cls(waveform, values[3])
+    return cls(waveform, call_mapper)
 
 
 def _parse_number(value: str) -> Number:

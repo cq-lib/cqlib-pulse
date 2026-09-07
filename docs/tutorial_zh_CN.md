@@ -22,11 +22,7 @@ that they have been altered from the originals.
 python -m pip install -e .
 ```
 
-天衍云端功能使用可选依赖：
-
-```bash
-python -m pip install -e '.[tianyan]'
-```
+安装时会自动安装 `cqlib-tianyan`，用于天衍任务提交和结果查询。
 
 ## 构建脉冲线路
 
@@ -67,12 +63,11 @@ print(restored.channel_times)
 ## 提交到天衍平台
 
 ```python
-from cqlib_pulse import TianyanExecutor
+from cqlib_tianyan import TianyanPlatform
 
-executor = TianyanExecutor.login(
-    api_key="your-api-key",
-    machine_name="your-machine-name",
-)
-execution = executor.run(circuit, shots=1000)
-print(execution.results)
+platform = TianyanPlatform.login("your-api-key")
+backend = platform.get_backend("your-machine-name")
+task = backend.run([circuit.to_qcis()], shots=1000)
+results = task.wait(timeout_secs=3600, poll_interval_secs=10)
+print(results)
 ```

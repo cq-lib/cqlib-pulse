@@ -15,6 +15,7 @@
 from __future__ import annotations
 
 from collections.abc import Iterable, Iterator, Sequence
+from typing import TypeVar, overload
 
 from ..errors import PulseValidationError
 from .instructions import PXY, PZ, PZ0, G, PulseInstruction
@@ -22,19 +23,25 @@ from .operations import Operation, PulseOperation, ScheduledOperation, StandardO
 from .targets import CouplerQubit, PulseTarget, Qubit
 from .waveforms import MAX_PULSE_LENGTH_NS, Number, Waveform
 
+_TargetT = TypeVar("_TargetT", Qubit, CouplerQubit)
+
 
 def _targets(
-    value: int | Iterable[int | PulseTarget] | None,
-    cls: type[PulseTarget],
-) -> set[PulseTarget]:
+    value: int | Iterable[int | _TargetT] | None,
+    cls: type[_TargetT],
+) -> set[_TargetT]:
     if value is None:
         return set()
+    if isinstance(value, bool):
+        raise PulseValidationError("Target count must be a non-negative integer")
     if isinstance(value, int):
         if value < 0:
             raise PulseValidationError("Target count must be non-negative")
         return {cls(index) for index in range(value)}
-    result: set[PulseTarget] = set()
+    result: set[_TargetT] = set()
     for item in value:
+        if isinstance(item, bool):
+            raise PulseValidationError("Target index must be a non-negative integer")
         target = cls(item) if isinstance(item, int) else item
         if not isinstance(target, cls):
             raise PulseValidationError(f"Expected {cls.__name__}, got {type(target).__name__}")
@@ -42,15 +49,16 @@ def _targets(
     return result
 
 
-def _qubit(value: int | Qubit) -> Qubit:
-    return Qubit(value) if isinstance(value, int) else value
+def _resolve_target(target: int | PulseTarget) -> PulseTarget:
+    if isinstance(target, bool):
+        raise PulseValidationError("Target index must be a non-negative integer")
+    return Qubit(target) if isinstance(target, int) else target
 
 
 class PulseCircuit(Sequence[Operation]):
     """An ordered circuit supporting both pulse and ordinary QCIS operations.
 
-    The extension owns its Python operation sequence and reuses ``cqlib.Qubit``.
-    The non-subclassable PyO3 ``cqlib.Circuit`` is used through composition.
+    The extension owns its targets and Python operation sequence independently.
     """
 
     def __init__(
@@ -65,7 +73,13 @@ class PulseCircuit(Sequence[Operation]):
     def __len__(self) -> int:
         return len(self._operations)
 
-    def __getitem__(self, index):  # type: ignore[no-untyped-def]
+    @overload
+    def __getitem__(self, index: int) -> Operation: ...
+
+    @overload
+    def __getitem__(self, index: slice) -> Sequence[Operation]: ...
+
+    def __getitem__(self, index: int | slice) -> Operation | Sequence[Operation]:
         return self._operations[index]
 
     def __iter__(self) -> Iterator[Operation]:
@@ -73,18 +87,22 @@ class PulseCircuit(Sequence[Operation]):
 
     @property
     def qubits(self) -> tuple[Qubit, ...]:
-        return tuple(sorted(self._qubits, key=lambda target: target.index))  # type: ignore[return-value]
+        return tuple(sorted(self._qubits, key=lambda target: target.index))
 
     @property
     def coupler_qubits(self) -> tuple[CouplerQubit, ...]:
-        return tuple(sorted(self._couplers, key=lambda target: target.index))  # type: ignore[return-value]
+        return tuple(sorted(self._couplers, key=lambda target: target.index))
 
-    def append(self, instruction: PulseInstruction, target: PulseTarget) -> "PulseCircuit":
-        return self.append_operation(PulseOperation(instruction, target))
+    def append(
+        self,
+        instruction: PulseInstruction,
+        target: int | PulseTarget,
+    ) -> PulseCircuit:
+        return self.append_operation(PulseOperation(instruction, _resolve_target(target)))
 
     append_pulse = append
 
-    def append_operation(self, operation: Operation) -> "PulseCircuit":
+    def append_operation(self, operation: Operation) -> PulseCircuit:
         if not isinstance(operation, (PulseOperation, StandardOperation)):
             raise PulseValidationError("operation must be a pulse or standard operation")
         self._operations.append(operation)
@@ -98,10 +116,13 @@ class PulseCircuit(Sequence[Operation]):
     def append_standard(
         self,
         opcode: str,
-        targets: Iterable[PulseTarget],
+        targets: int | PulseTarget | Iterable[int | PulseTarget],
         parameters: Iterable[Number] = (),
-    ) -> "PulseCircuit":
-        return self.append_operation(StandardOperation(opcode, tuple(targets), tuple(parameters)))
+    ) -> PulseCircuit:
+        if isinstance(targets, (int, Qubit, CouplerQubit)):
+            targets = (targets,)
+        resolved_targets = tuple(_resolve_target(target) for target in targets)
+        return self.append_operation(StandardOperation(opcode, resolved_targets, tuple(parameters)))
 
     def pxy(
         self,
@@ -111,8 +132,8 @@ class PulseCircuit(Sequence[Operation]):
         frequency: float,
         phase: float = 0.0,
         drag_alpha: float = 0.0,
-    ) -> "PulseCircuit":
-        return self.append(PXY(waveform, frequency, phase, drag_alpha), _qubit(qubit))
+    ) -> PulseCircuit:
+        return self.append(PXY(waveform, frequency, phase, drag_alpha), qubit)
 
     def pz(
         self,
@@ -120,9 +141,8 @@ class PulseCircuit(Sequence[Operation]):
         waveform: Waveform,
         *,
         call_mapper: bool | int = False,
-    ) -> "PulseCircuit":
-        resolved = Qubit(target) if isinstance(target, int) else target
-        return self.append(PZ(waveform, call_mapper), resolved)
+    ) -> PulseCircuit:
+        return self.append(PZ(waveform, call_mapper), target)
 
     def pz0(
         self,
@@ -130,39 +150,64 @@ class PulseCircuit(Sequence[Operation]):
         waveform: Waveform,
         *,
         call_mapper: bool | int = False,
-    ) -> "PulseCircuit":
-        resolved = Qubit(target) if isinstance(target, int) else target
-        return self.append(PZ0(waveform, call_mapper), resolved)
+    ) -> PulseCircuit:
+        return self.append(PZ0(waveform, call_mapper), target)
 
     def g(
         self,
         coupler: int | CouplerQubit,
         length: int,
         coupling_strength: float,
-    ) -> "PulseCircuit":
+    ) -> PulseCircuit:
         target = CouplerQubit(coupler) if isinstance(coupler, int) else coupler
         return self.append(G(length, coupling_strength), target)
 
-    def delay(self, target: int | PulseTarget, length: int) -> "PulseCircuit":
-        if isinstance(length, bool) or not isinstance(length, int):
-            raise PulseValidationError("delay length must be an integer")
-        if not 0 <= length <= MAX_PULSE_LENGTH_NS:
-            raise PulseValidationError(f"delay length must be in [0, {MAX_PULSE_LENGTH_NS}]")
-        resolved = Qubit(target) if isinstance(target, int) else target
-        return self.append_standard("I", (resolved,), (length,))
+    def delay(self, target: int | PulseTarget, length: int) -> PulseCircuit:
+        return self.i(target, length)
 
-    def rz(self, qubit: int | Qubit, angle: float) -> "PulseCircuit":
-        return self.append_standard("RZ", (_qubit(qubit),), (angle,))
+    def rz(self, qubit: int | Qubit, angle: float) -> PulseCircuit:
+        return self.append_standard("RZ", qubit, (angle,))
 
-    def x2p(self, qubit: int | Qubit) -> "PulseCircuit":
-        return self.append_standard("X2P", (_qubit(qubit),))
+    def x2p(self, qubit: int | Qubit) -> PulseCircuit:
+        return self.append_standard("X2P", qubit)
 
-    def measure(self, qubit: int | Qubit) -> "PulseCircuit":
-        return self.append_standard("M", (_qubit(qubit),))
+    def x2m(self, qubit: int | Qubit) -> PulseCircuit:
+        return self.append_standard("X2M", qubit)
 
-    def barrier(self, *targets: int | PulseTarget) -> "PulseCircuit":
-        resolved = tuple(Qubit(value) if isinstance(value, int) else value for value in targets)
-        return self.append_standard("B", resolved)
+    def y2p(self, qubit: int | Qubit) -> PulseCircuit:
+        return self.append_standard("Y2P", qubit)
+
+    def y2m(self, qubit: int | Qubit) -> PulseCircuit:
+        return self.append_standard("Y2M", qubit)
+
+    def xy2p(self, qubit: int | Qubit, angle: float) -> PulseCircuit:
+        return self.append_standard("XY2P", qubit, (angle,))
+
+    def xy2m(self, qubit: int | Qubit, angle: float) -> PulseCircuit:
+        return self.append_standard("XY2M", qubit, (angle,))
+
+    def cx(
+        self,
+        control: int | Qubit,
+        target: int | Qubit,
+    ) -> PulseCircuit:
+        return self.append_standard("CX", (control, target))
+
+    def i(self, target: int | PulseTarget, length: int) -> PulseCircuit:
+        """Append a QCIS ``I`` delay instruction."""
+
+        return self.append_standard("I", target, (length,))
+
+    def b(self, *targets: int | PulseTarget) -> PulseCircuit:
+        """Append a QCIS ``B`` barrier instruction."""
+
+        return self.append_standard("B", targets)
+
+    def measure(self, qubit: int | Qubit) -> PulseCircuit:
+        return self.append_standard("M", qubit)
+
+    def barrier(self, *targets: int | PulseTarget) -> PulseCircuit:
+        return self.b(*targets)
 
     def to_qcis(self) -> str:
         from ..qcis import dumps
@@ -170,7 +215,7 @@ class PulseCircuit(Sequence[Operation]):
         return dumps(self._operations)
 
     @classmethod
-    def from_qcis(cls, qcis: str) -> "PulseCircuit":
+    def from_qcis(cls, qcis: str) -> PulseCircuit:
         from ..qcis import loads
 
         circuit = cls()
@@ -210,9 +255,8 @@ class PulseCircuit(Sequence[Operation]):
 
     @property
     def channel_times(self) -> dict[PulseTarget, int]:
-        clocks: dict[PulseTarget, int] = {
-            target: 0 for target in (*self.qubits, *self.coupler_qubits)
-        }
+        clocks: dict[PulseTarget, int] = {target: 0 for target in self.qubits}
+        clocks.update((target, 0) for target in self.coupler_qubits)
         for scheduled in self.schedule():
             operation = scheduled.operation
             if isinstance(operation, PulseOperation) and not operation.instruction.advances_time:

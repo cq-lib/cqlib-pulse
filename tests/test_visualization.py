@@ -14,6 +14,8 @@ import json
 from urllib.error import HTTPError
 from urllib.parse import parse_qs
 
+import pytest
+
 from cqlib_pulse import (
     CloudPulseVisualizer,
     CosineWaveform,
@@ -51,6 +53,13 @@ def test_cloud_visualization_uses_create_and_query_apis():
         "https://cloud.example/pulse/42"
     )
     assert api.queries == [42, 42]
+
+
+def test_waveform_client_rejects_invalid_query_id():
+    client = TianyanWaveformClient("secret-token", "tianyan176")
+
+    with pytest.raises(ValueError, match="query_id"):
+        client.query_waveform_data(True)
 
 
 class FakeHTTPResponse:

@@ -12,11 +12,11 @@
 
 """Standalone Python pulse module for CQLib."""
 
+from importlib.metadata import version as _distribution_version
+
 from .cloud import (
     CloudPulseVisualizer,
-    PulseExecution,
     TianyanAuthClient,
-    TianyanExecutor,
     TianyanWaveformClient,
     WaveformAPI,
     WaveformJob,
@@ -47,13 +47,12 @@ from .errors import (
     PulseValidationError,
     QCISParseError,
     TianyanAuthenticationError,
-    TianyanIntegrationError,
     WaveformAPIError,
 )
 from .qcis import dumps as qcis_dumps
 from .qcis import loads as qcis_loads
 
-__version__ = "0.1.0b1"
+__version__ = _distribution_version("cqlib-pulse")
 
 __all__ = [
     "CloudPulseVisualizer",
@@ -65,7 +64,6 @@ __all__ = [
     "Operation",
     "PulseCircuit",
     "PulseError",
-    "PulseExecution",
     "PulseInstruction",
     "PulseOperation",
     "PulseTarget",
@@ -80,8 +78,6 @@ __all__ = [
     "StandardOperation",
     "TianyanAuthClient",
     "TianyanAuthenticationError",
-    "TianyanExecutor",
-    "TianyanIntegrationError",
     "TianyanWaveformClient",
     "Waveform",
     "WaveformAPI",

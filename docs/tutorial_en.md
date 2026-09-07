@@ -22,11 +22,8 @@ Editable installation from the project root:
 python -m pip install -e .
 ```
 
-Tianyan cloud services use the optional dependencies:
-
-```bash
-python -m pip install -e '.[tianyan]'
-```
+Installation automatically includes `cqlib-tianyan` for Tianyan task submission
+and result retrieval.
 
 ## Build a pulse circuit
 
@@ -68,12 +65,11 @@ print(restored.channel_times)
 ## Run on Tianyan
 
 ```python
-from cqlib_pulse import TianyanExecutor
+from cqlib_tianyan import TianyanPlatform
 
-executor = TianyanExecutor.login(
-    api_key="your-api-key",
-    machine_name="your-machine-name",
-)
-execution = executor.run(circuit, shots=1000)
-print(execution.results)
+platform = TianyanPlatform.login("your-api-key")
+backend = platform.get_backend("your-machine-name")
+task = backend.run([circuit.to_qcis()], shots=1000)
+results = task.wait(timeout_secs=3600, poll_interval_secs=10)
+print(results)
 ```

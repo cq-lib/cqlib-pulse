@@ -14,6 +14,7 @@
 
 from __future__ import annotations
 
+from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from math import pi
 from typing import ClassVar
@@ -23,25 +24,22 @@ from .targets import CouplerQubit, PulseTarget, Qubit
 from .waveforms import MAX_PULSE_LENGTH_NS, Number, NumericWaveform, Waveform, validate_real
 
 
-def _mapper(value: bool | int) -> bool:
-    if not isinstance(value, (bool, int)) or value not in (False, True, 0, 1):
-        raise PulseValidationError("call_mapper must be bool, 0 or 1")
-    return bool(value)
-
-
 @dataclass(frozen=True, slots=True)
-class PulseInstruction:
+class PulseInstruction(ABC):
     opcode: ClassVar[str]
 
+    @abstractmethod
     def validate_target(self, target: PulseTarget) -> None:
-        raise NotImplementedError
+        """Validate that this instruction supports ``target``."""
 
+    @abstractmethod
     def parameters(self) -> tuple[Number, ...]:
-        raise NotImplementedError
+        """Return the instruction parameters in QCIS order."""
 
     @property
+    @abstractmethod
     def duration_ns(self) -> int:
-        raise NotImplementedError
+        """Return the duration of this instruction in nanoseconds."""
 
     @property
     def advances_time(self) -> bool:
@@ -96,7 +94,10 @@ class PZ(PulseInstruction):
     opcode: ClassVar[str] = "PZ"
 
     def __post_init__(self) -> None:
-        object.__setattr__(self, "call_mapper", _mapper(self.call_mapper))
+        call_mapper = self.call_mapper
+        if not isinstance(call_mapper, (bool, int)) or call_mapper not in (0, 1):
+            raise PulseValidationError("call_mapper must be bool, 0 or 1")
+        object.__setattr__(self, "call_mapper", bool(call_mapper))
 
     def validate_target(self, target: PulseTarget) -> None:
         if not isinstance(target, (Qubit, CouplerQubit)):

@@ -14,10 +14,11 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from enum import IntEnum
 from math import isfinite
-from typing import ClassVar, Sequence
+from typing import ClassVar, cast
 
 from ..errors import PulseValidationError, QCISParseError
 
@@ -53,7 +54,7 @@ class Waveform:
         length: int,
         amplitude: float,
         **kwargs: object,
-    ) -> "Waveform":
+    ) -> Waveform:
         classes = {
             WaveformType.NUMERIC: NumericWaveform,
             WaveformType.COSINE: CosineWaveform,
@@ -66,7 +67,7 @@ class Waveform:
             raise PulseValidationError(f"Unsupported waveform type: {w_type!r}") from exc
         if "samples" in kwargs and "data_list" not in kwargs:
             kwargs["data_list"] = kwargs.pop("samples")
-        return cls(length=length, amplitude=amplitude, **kwargs)
+        return cast(Waveform, cls(length=length, amplitude=amplitude, **kwargs))
 
     def __post_init__(self) -> None:
         if isinstance(self.length, bool) or not isinstance(self.length, int):
@@ -95,7 +96,7 @@ class Waveform:
         return " ".join(_format_number(value) for value in self.parameters())
 
     @classmethod
-    def load(cls, waveform: str | Sequence[Number], gate: str | None = None) -> "Waveform":
+    def load(cls, waveform: str | Sequence[Number], gate: str | None = None) -> Waveform:
         """Load ``waveform_id length amplitude [shape parameters...]``.
 
         ``gate`` is retained for source compatibility. Gate-specific fields
@@ -193,22 +194,30 @@ def waveform_from_parameters(parameters: Sequence[Number]) -> Waveform:
     raw_length = parameters[1]
     if isinstance(raw_length, bool) or int(raw_length) != raw_length:
         raise QCISParseError("Waveform length must be an integer")
-    common = {"length": int(raw_length), "amplitude": parameters[2]}
+    length = int(raw_length)
+    amplitude = parameters[2]
     rest = list(parameters[3:])
     try:
         if waveform_type is WaveformType.COSINE:
             if rest:
                 raise QCISParseError("Cosine waveform has unexpected parameters")
-            return CosineWaveform(**common)  # type: ignore[arg-type]
+            return CosineWaveform(length=length, amplitude=amplitude)
         if waveform_type is WaveformType.FLATTOP:
             if len(rest) != 1:
                 raise QCISParseError("Flattop waveform requires one edge parameter")
-            return FlattopWaveform(edge=rest[0], **common)  # type: ignore[arg-type]
+            return FlattopWaveform(length=length, amplitude=amplitude, edge=rest[0])
         if waveform_type is WaveformType.SLEPIAN:
             if len(rest) != 4:
                 raise QCISParseError("Slepian waveform requires thf, thi, lam2 and lam3")
-            return SlepianWaveform(thf=rest[0], thi=rest[1], lam2=rest[2], lam3=rest[3], **common)  # type: ignore[arg-type]
-        return NumericWaveform(data_list=tuple(rest), **common)  # type: ignore[arg-type]
+            return SlepianWaveform(
+                length=length,
+                amplitude=amplitude,
+                thf=rest[0],
+                thi=rest[1],
+                lam2=rest[2],
+                lam3=rest[3],
+            )
+        return NumericWaveform(length=length, amplitude=amplitude, data_list=tuple(rest))
     except PulseValidationError as exc:
         raise QCISParseError(str(exc)) from exc
 

@@ -15,7 +15,7 @@
 from __future__ import annotations
 
 import json
-from typing import Any
+from typing import cast
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlencode
 from urllib.request import Request, urlopen
@@ -80,7 +80,7 @@ class TianyanAuthClient:
             raise TianyanAuthenticationError("Tianyan login response is missing data.access_token")
         return token
 
-    def _send(self, request: Request) -> dict[str, Any]:
+    def _send(self, request: Request) -> dict[str, object]:
         try:
             with urlopen(request, timeout=self.request_timeout_secs) as response:
                 result = json.loads(response.read().decode("utf-8"))
@@ -96,4 +96,4 @@ class TianyanAuthClient:
             raise TianyanAuthenticationError("Tianyan login API returned invalid JSON") from exc
         if not isinstance(result, dict):
             raise TianyanAuthenticationError("Tianyan login response must be a JSON object")
-        return result
+        return cast(dict[str, object], result)

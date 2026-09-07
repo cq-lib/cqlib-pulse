@@ -22,21 +22,9 @@ that they have been altered from the originals.
 
 - QCIS 脉冲目标、波形和指令数据结构；
 - `PulseCircuit` 混合线路构建、QCIS 序列化/反序列化和通道时间线；
-- 通过可选依赖 `cqlib-tianyan` 提交任务并取得执行结果；
+- 将生成的 QCIS 通过 `cqlib-tianyan` 直接提交到天衍平台；
 - 调用云平台的创建、查询接口取得脉冲可视化 URL。
 
-普通量子比特直接复用 `cqlib.Qubit`；波形、耦合通道和脉冲指令由本包提供。
-
-## 与 cqlib 的关系
-
-类型关系如下：
-
-```text
-cqlib.Qubit                  基础目标类型
-cqlib_pulse.CouplerQubit     脉冲专用耦合通道
-cqlib_pulse.PulseInstruction 脉冲指令类型
-cqlib_pulse.PulseCircuit     脉冲操作序列
-```
 
 ## 源码架构
 
@@ -58,7 +46,6 @@ src/cqlib_pulse/
 │   └── serializer.py    Python 对象 -> QCIS
 └── cloud/               外部云平台适配层
     ├── auth.py          API Key 登录与 token 刷新
-    ├── executor.py      cqlib-tianyan 任务提交
     └── visualization.py 云端波形创建和查询
 ```
 
@@ -74,19 +61,19 @@ python -m pip install build
 python -m build
 ```
 
-使用天衍云功能时安装可选依赖：
+安装发布包：
 
 ```bash
-python -m pip install 'cqlib-pulse[tianyan]'
+python -m pip install cqlib-pulse
 ```
 
-基础安装会自动安装 `cqlib`；`cqlib-tianyan` 仅在需要云端提交和可视化时安装。
+安装时会自动安装必需依赖 `cqlib-tianyan`，用于天衍任务提交和结果查询。
+脉冲可视化客户端由本包直接提供。
 
 ## 构建线路并转 QCIS
 
 ```python
-from cqlib import Qubit
-from cqlib_pulse import CosineWaveform, CouplerQubit, PulseCircuit
+from cqlib_pulse import CosineWaveform, CouplerQubit, PulseCircuit, Qubit
 
 circuit = PulseCircuit()
 circuit.pxy(
@@ -133,10 +120,15 @@ restored = PulseCircuit.from_qcis(qcis)
 线路也可以保留普通 QCIS 指令：
 
 ```python
-circuit.rz(1, 1.57).x2p(1).barrier(Qubit(1), Qubit(2))
+circuit.x2p(1).x2m(1).y2p(1).y2m(1)
+circuit.xy2p(1, 0.25).xy2m(1, -0.25).rz(1, 1.57)
+circuit.cx(1, 2).i(1, 20).b(Qubit(1), Qubit(2))
 print(circuit.schedule())       # 每条操作的 start_ns / end_ns
 print(circuit.channel_times)    # 每个通道的最终时刻
 ```
+
+当前完整支持 `X2P`、`X2M`、`Y2P`、`Y2M`、`XY2P`、`XY2M`、`RZ`、
+`CX`、`I`、`B` 和 `M`。`delay()`/`barrier()` 是 `i()`/`b()` 的兼容名称。
 
 `PXY/PZ/G/I` 推进对应通道时间，`PZ0` 不推进时间，`B` 对齐所列通道。
 机器标定值、映射关系和数值波形的硬件约束仍由云平台校验，本地只进行
@@ -145,20 +137,19 @@ print(circuit.channel_times)    # 每个通道的最终时刻
 ## 提交任务并取得结果
 
 ```python
-from cqlib_pulse import TianyanExecutor
+from cqlib_tianyan import TianyanPlatform
 
-executor = TianyanExecutor.login(api_key="...", machine_name="...")
-execution = executor.run(circuit, shots=1000)
+platform = TianyanPlatform.login("...")
+backend = platform.get_backend("...")
+task = backend.run([circuit.to_qcis()], shots=1000)
+results = task.wait(timeout_secs=3600, poll_interval_secs=10)
 
-print(execution.task)     # cqlib-tianyan 的任务句柄
-print(execution.results)  # task.wait(...) 返回的执行结果
+print(task)
+print(results)
 ```
 
-也可以复用已经登录的 backend：
-
-```python
-executor = TianyanExecutor(backend)
-```
+`PulseCircuit` 只负责生成 QCIS；设备选择、任务状态、校准模式和结果类型均由
+`cqlib-tianyan` 直接提供，避免重复包装其 API。
 
 ## 云端脉冲可视化
 

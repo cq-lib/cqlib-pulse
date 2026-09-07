@@ -25,10 +25,6 @@ class QCISParseError(PulseError, ValueError):
     """A QCIS source line cannot be parsed as a supported pulse command."""
 
 
-class TianyanIntegrationError(PulseError, RuntimeError):
-    """The optional Tianyan integration is missing or incompatible."""
-
-
 class WaveformAPIError(PulseError, RuntimeError):
     """The cloud waveform API request or response is invalid."""
 

@@ -23,20 +23,8 @@ It supports Python 3.10+ and provides:
 
 - QCIS pulse targets, waveforms, and instruction data structures;
 - mixed circuit construction, QCIS serialization and parsing, and channel timelines;
-- optional task submission and result retrieval through `cqlib-tianyan`;
+- direct Tianyan submission of generated QCIS through `cqlib-tianyan`;
 - cloud APIs for creating and querying pulse visualization URLs.
-
-Standard qubits reuse `cqlib.Qubit`. This package provides pulse waveforms,
-coupling channels, pulse instructions, and pulse circuits.
-
-## Relationship with cqlib
-
-```text
-cqlib.Qubit                  Standard qubit target
-cqlib_pulse.CouplerQubit     Pulse coupling channel
-cqlib_pulse.PulseInstruction Pulse instruction type
-cqlib_pulse.PulseCircuit     Pulse operation sequence
-```
 
 ## Source layout
 
@@ -58,13 +46,12 @@ src/cqlib_pulse/
 │   └── serializer.py    Python objects to QCIS
 └── cloud/               Cloud platform adapters
     ├── auth.py          API authentication and token refresh
-    ├── executor.py      cqlib-tianyan task submission
     └── visualization.py Cloud waveform creation and queries
 ```
 
-The `qcis` and `cloud` layers depend on the structures in `core`. Cloud
-dependencies remain optional, so local circuit and QCIS operations stay
-lightweight.
+The `qcis` and `cloud` layers depend on the structures in `core`. Network
+requests are handled by the cloud layer, independently of local circuit
+and QCIS operations.
 
 ## Installation and build
 
@@ -74,20 +61,20 @@ python -m pip install build
 python -m build
 ```
 
-Tianyan cloud features use the optional `tianyan` extra:
+Install the published package:
 
 ```bash
-python -m pip install 'cqlib-pulse[tianyan]'
+python -m pip install cqlib-pulse
 ```
 
-The base installation includes `cqlib`. The optional `cqlib-tianyan`
-dependency is required only for cloud submission and visualization.
+Installation automatically includes the required `cqlib-tianyan` dependency
+for Tianyan task submission and result retrieval. The waveform visualization
+client is provided directly by this package.
 
 ## Build a circuit and generate QCIS
 
 ```python
-from cqlib import Qubit
-from cqlib_pulse import CosineWaveform, CouplerQubit, PulseCircuit
+from cqlib_pulse import CosineWaveform, CouplerQubit, PulseCircuit, Qubit
 
 circuit = PulseCircuit()
 circuit.pxy(
@@ -134,10 +121,16 @@ parameters of `PXY`; `call_mapper` is an instruction parameter of `PZ/PZ0`.
 Circuits can also contain standard QCIS instructions:
 
 ```python
-circuit.rz(1, 1.57).x2p(1).barrier(Qubit(1), Qubit(2))
+circuit.x2p(1).x2m(1).y2p(1).y2m(1)
+circuit.xy2p(1, 0.25).xy2m(1, -0.25).rz(1, 1.57)
+circuit.cx(1, 2).i(1, 20).b(Qubit(1), Qubit(2))
 print(circuit.schedule())
 print(circuit.channel_times)
 ```
+
+The complete supported set is `X2P`, `X2M`, `Y2P`, `Y2M`, `XY2P`,
+`XY2M`, `RZ`, `CX`, `I`, `B`, and `M`. `delay()`/`barrier()` remain as
+compatibility names for `i()`/`b()`.
 
 `PXY/PZ/G/I` advance their channel clocks, `PZ0` does not advance time, and
 `B` aligns the listed channels. Machine calibration, mapping, and hardware
@@ -146,20 +139,20 @@ constraints are validated by the cloud platform.
 ## Submit a task and retrieve results
 
 ```python
-from cqlib_pulse import TianyanExecutor
+from cqlib_tianyan import TianyanPlatform
 
-executor = TianyanExecutor.login(api_key="...", machine_name="...")
-execution = executor.run(circuit, shots=1000)
+platform = TianyanPlatform.login("...")
+backend = platform.get_backend("...")
+task = backend.run([circuit.to_qcis()], shots=1000)
+results = task.wait(timeout_secs=3600, poll_interval_secs=10)
 
-print(execution.task)
-print(execution.results)
+print(task)
+print(results)
 ```
 
-An authenticated backend can also be reused directly:
-
-```python
-executor = TianyanExecutor(backend)
-```
+`PulseCircuit` is responsible only for producing QCIS. Backend selection, task
+status, calibration modes, and result types come directly from
+`cqlib-tianyan`, without a duplicate wrapper API.
 
 ## Cloud pulse visualization
 
