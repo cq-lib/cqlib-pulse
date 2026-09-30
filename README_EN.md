@@ -18,40 +18,13 @@ that they have been altered from the originals.
 
 [中文教程](docs/tutorial_zh_CN.md) | [English Tutorial](docs/tutorial_en.md)
 
-`cqlib-pulse` is a standalone pulse-circuit extension for the CQLib ecosystem.
+`cqlib-pulse` is a standalone pulse-circuit extension for the Cqlib ecosystem.
 It supports Python 3.10+ and provides:
 
 - QCIS pulse targets, waveforms, and instruction data structures;
 - mixed circuit construction, QCIS serialization and parsing, and channel timelines;
 - direct Tianyan submission of generated QCIS through `cqlib-tianyan`;
 - cloud APIs for creating and querying pulse visualization URLs.
-
-## Source layout
-
-The public API is exported directly from `cqlib_pulse`:
-
-```text
-src/cqlib_pulse/
-├── __init__.py          Public API exports
-├── errors.py            Public exceptions
-├── py.typed             PEP 561 typing marker
-├── core/                Pulse domain model
-│   ├── targets.py       Qubit and CouplerQubit targets
-│   ├── waveforms.py     Supported waveforms
-│   ├── instructions.py  PXY, PZ, PZ0, and G instructions
-│   ├── operations.py    Instructions bound to targets
-│   └── circuit.py       Circuit construction and scheduling
-├── qcis/                QCIS protocol adapters
-│   ├── parser.py        QCIS to Python objects
-│   └── serializer.py    Python objects to QCIS
-└── cloud/               Cloud platform adapters
-    ├── auth.py          API authentication and token refresh
-    └── visualization.py Cloud waveform creation and queries
-```
-
-The `qcis` and `cloud` layers depend on the structures in `core`. Network
-requests are handled by the cloud layer, independently of local circuit
-and QCIS operations.
 
 ## Installation and build
 
@@ -71,6 +44,23 @@ Installation automatically includes the required `cqlib-tianyan` dependency
 for Tianyan task submission and result retrieval. The waveform visualization
 client is provided directly by this package.
 
+## Pulse instructions
+
+This package supports the four pulse-control instructions of the QCIS
+instruction set:
+
+| Instruction | Target | Channel | Timing | Description |
+|-------------|--------|---------|--------|-------------|
+| `PXY` | Data qubit | XY | Serial (owns the timeline) | AC pulse with independent length, amplitude, frequency, phase and DRAG coefficient |
+| `PZ` | Data qubit / coupler | Z | Serial (owns the timeline) | DC pulse; `call_mapper` toggles the frequency/coupling-strength-to-codevalue mapping |
+| `PZ0` | Data qubit / coupler | Z | Parallel (overlaid, does not advance the timeline) | DC pulse; multiple `PZ0` pulses stack at the same instant |
+| `G` | Coupler | Z | Serial (owns the timeline) | Adjusts the coupling strength (MHz) between adjacent data qubits |
+
+Waveform ids `-1/0/1/2` map to the four waveforms `numeric`, `cosine`,
+`flattop` and `slepian`. Pulse lengths are in nanoseconds (up to 49984); every pulse
+instruction except `PZ0` advances its channel's time marker, which can also
+be advanced manually with the `I` instruction (`circuit.delay()`).
+
 ## Build a circuit and generate QCIS
 
 ```python
@@ -85,11 +75,11 @@ circuit.pxy(
     drag_alpha=1.0,
 )
 circuit.pz(
-    CouplerQubit(107),
+    CouplerQubit(96),
     CosineWaveform(length=20, amplitude=-0.1),
     call_mapper=True,
 )
-circuit.g(107, length=100, coupling_strength=-3_000_000)
+circuit.g(96, length=100, coupling_strength=-3)
 circuit.delay(Qubit(1), length=20)
 circuit.measure(Qubit(1))
 
@@ -101,8 +91,8 @@ Output:
 
 ```text
 PXY Q1 0 40 0.2 5000000000 0 1
-PZ G107 0 20 -0.1 1
-G G107 100 -3000000
+PZ G96 0 20 -0.1 1
+G G96 100 -3
 I Q1 20
 M Q1
 ```
@@ -133,8 +123,10 @@ The complete supported set is `X2P`, `X2M`, `Y2P`, `Y2M`, `XY2P`,
 compatibility names for `i()`/`b()`.
 
 `PXY/PZ/G/I` advance their channel clocks, `PZ0` does not advance time, and
-`B` aligns the listed channels. Machine calibration, mapping, and hardware
-constraints are validated by the cloud platform.
+`B` aligns the listed channels. Machine calibration values, mapping
+relations, and numeric-waveform hardware constraints are validated by the
+cloud platform; locally, only structural and basic numeric checks consistent
+with the public protocol are performed.
 
 ## Submit a task and retrieve results
 
@@ -144,7 +136,7 @@ from cqlib_tianyan import TianyanPlatform
 platform = TianyanPlatform.login("...")
 backend = platform.get_backend("...")
 task = backend.run([circuit.to_qcis()], shots=1000)
-results = task.wait(timeout_secs=3600, poll_interval_secs=10)
+results = task.wait(timeout=3600, poll_interval=10)
 
 print(task)
 print(results)
@@ -175,8 +167,12 @@ url = visualizer.visualize(circuit, circuit_name="demo")
 print(url)
 ```
 
-The default service URL is `https://qc.zdxlz.com`. Authentication tokens are
-kept in memory, and the client refreshes the token once after a 401 response.
+The default service URL is `https://qc.zdxlz.com`. The create request sends
+`circuit`, `qcCode`, `circuitName` and `isVerify`; the query endpoint returns
+the response's `data.visibleUrl` for the task ID. The API key is exchanged
+for an access token that is kept only in memory and sent with the
+Tianyan-compatible `basicToken` and `Authorization: Bearer` headers; if an
+endpoint returns 401, the client refreshes the token and retries once.
 
 ## Contributing
 

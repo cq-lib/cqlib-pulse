@@ -18,40 +18,12 @@ that they have been altered from the originals.
 
 [中文教程](docs/tutorial_zh_CN.md) | [English Tutorial](docs/tutorial_en.md)
 
-`cqlib-pulse` 是一个支持 Python 3.10+、面向 CQLib 生态的独立脉冲线路扩展包，提供：
+`cqlib-pulse` 是一个支持 Python 3.10+、面向 Cqlib 生态的独立脉冲线路扩展包，提供：
 
 - QCIS 脉冲目标、波形和指令数据结构；
 - `PulseCircuit` 混合线路构建、QCIS 序列化/反序列化和通道时间线；
 - 将生成的 QCIS 通过 `cqlib-tianyan` 直接提交到天衍平台；
 - 调用云平台的创建、查询接口取得脉冲可视化 URL。
-
-
-## 源码架构
-
-源码按职责分为三层，使用者通常只需要从顶层 `cqlib_pulse` 导入：
-
-```text
-src/cqlib_pulse/
-├── __init__.py          对外统一导出稳定 API
-├── errors.py            公共异常
-├── py.typed             PEP 561 类型标记
-├── core/                Python 脉冲领域模型
-│   ├── targets.py       Qubit/CouplerQubit 目标
-│   ├── waveforms.py     四种波形
-│   ├── instructions.py  PXY/PZ/PZ0/G 指令
-│   ├── operations.py    指令与目标的绑定
-│   └── circuit.py       线路构建和时间调度
-├── qcis/                QCIS 协议适配层
-│   ├── parser.py        QCIS -> Python 对象
-│   └── serializer.py    Python 对象 -> QCIS
-└── cloud/               外部云平台适配层
-    ├── auth.py          API Key 登录与 token 刷新
-    └── visualization.py 云端波形创建和查询
-```
-
-`qcis` 和 `cloud` 都建立在 `core` 数据结构之上；`PulseCircuit` 仅在执行
-转换方法时延迟调用 QCIS 适配层。云平台代码不会进入波形、指令等基础
-数据结构，QCIS 文本处理也不负责网络请求。
 
 ## 安装和构建
 
@@ -70,6 +42,21 @@ python -m pip install cqlib-pulse
 安装时会自动安装必需依赖 `cqlib-tianyan`，用于天衍任务提交和结果查询。
 脉冲可视化客户端由本包直接提供。
 
+## 脉冲指令
+
+本包支持 QCIS 脉冲控制指令集中的四条指令：
+
+| 指令    | 作用目标        | 通道    | 时序             | 说明                                     |
+|-------|-------------|-------|----------------|----------------------------------------|
+| `PXY` | 数据比特        | XY    | 串联（独占时序）       | 交流脉冲，独立控制时长、幅度、频率、相位和 DRAG 系数          |
+| `PZ`  | 数据比特 / 耦合比特 | Z     | 串联（独占时序）       | 直流脉冲，`call_mapper` 控制是否启用频率/耦合强度到码值的映射 |
+| `PZ0` | 数据比特 / 耦合比特 | Z     | 并联（叠加，不推进时间标记） | 直流脉冲，多个 `PZ0` 可在同一时刻叠加                 |
+| `G`   | 耦合比特        | Z     | 串联（独占时序）       | 调控相邻数据比特间的耦合强度（MHz）                    |
+
+波形编号 `-1/0/1/2` 分别对应 `numeric/cosine/flattop/slepian` 四种波形。
+脉冲时长单位为 ns（最大 49984）；除 `PZ0` 外的脉冲指令都会推进对应
+通道的时间标记，也可以用 `I` 指令（`circuit.delay()`）手动推进。
+
 ## 构建线路并转 QCIS
 
 ```python
@@ -84,11 +71,11 @@ circuit.pxy(
     drag_alpha=1.0,
 )
 circuit.pz(
-    CouplerQubit(107),
+    CouplerQubit(96),
     CosineWaveform(length=20, amplitude=-0.1),
     call_mapper=True,
 )
-circuit.g(107, length=100, coupling_strength=-3_000_000)
+circuit.g(96, length=100, coupling_strength=-3)
 circuit.delay(Qubit(1), length=20)
 circuit.measure(Qubit(1))
 
@@ -100,8 +87,8 @@ print(qcis)
 
 ```text
 PXY Q1 0 40 0.2 5000000000 0 1
-PZ G107 0 20 -0.1 1
-G G107 100 -3000000
+PZ G96 0 20 -0.1 1
+G G96 100 -3
 I Q1 20
 M Q1
 ```
@@ -142,7 +129,7 @@ from cqlib_tianyan import TianyanPlatform
 platform = TianyanPlatform.login("...")
 backend = platform.get_backend("...")
 task = backend.run([circuit.to_qcis()], shots=1000)
-results = task.wait(timeout_secs=3600, poll_interval_secs=10)
+results = task.wait(timeout=3600, poll_interval=10)
 
 print(task)
 print(results)
