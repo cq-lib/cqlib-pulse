@@ -62,3 +62,16 @@ def test_numeric_pxy_requires_equal_i_and_q_sample_counts():
     )
     with pytest.raises(PulseValidationError, match="even length"):
         PulseCircuit().pxy(0, waveform, frequency=5e9)
+
+
+def test_numeric_pxy_accepts_placeholder_frequency_phase_drag():
+    # Protocol note i: in numeric mode the frequency/phase/DRAG fields are
+    # unused placeholders and may take arbitrary finite values.
+    waveform = NumericWaveform(
+        length=3,
+        amplitude=0,
+        data_list=(0.1, 0.2, 0.3, -0.1, -0.2, -0.3),
+    )
+    qcis = PulseCircuit().pxy(0, waveform, frequency=0, phase=0, drag_alpha=0).to_qcis()
+    assert qcis == "PXY Q0 -1 3 0 0 0 0 0.1 0.2 0.3 -0.1 -0.2 -0.3"
+    assert PulseCircuit.from_qcis(qcis).to_qcis() == qcis
