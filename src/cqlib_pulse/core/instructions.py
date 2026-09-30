@@ -58,15 +58,18 @@ class PXY(PulseInstruction):
         validate_real("frequency", self.frequency)
         validate_real("phase", self.phase)
         validate_real("drag_alpha", self.drag_alpha)
+        if isinstance(self.waveform, NumericWaveform):
+            # In numeric mode the timing/amplitude/phase/DRAG fields are
+            # placeholders and may take arbitrary values (protocol note i).
+            if len(self.waveform.samples) < 6 or len(self.waveform.samples) % 2:
+                raise PulseValidationError("PXY numeric samples must have even length >= 6")
+            return
         if not 4e9 <= self.frequency <= 6e9:
             raise PulseValidationError("frequency must be in [4e9, 6e9] Hz")
         if not -pi < self.phase <= pi:
             raise PulseValidationError("phase must be in (-pi, pi]")
         if not -10 <= self.drag_alpha <= 10:
             raise PulseValidationError("drag_alpha must be in [-10, 10]")
-        if isinstance(self.waveform, NumericWaveform):
-            if len(self.waveform.samples) < 6 or len(self.waveform.samples) % 2:
-                raise PulseValidationError("PXY numeric samples must have even length >= 6")
 
     def validate_target(self, target: PulseTarget) -> None:
         if not isinstance(target, Qubit):

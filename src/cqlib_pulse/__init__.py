@@ -10,7 +10,7 @@
 # copyright notice, and modified files need to carry a notice indicating
 # that they have been altered from the originals.
 
-"""Standalone Python pulse module for CQLib."""
+"""Standalone Python pulse module for Cqlib."""
 
 from importlib.metadata import version as _distribution_version
 
